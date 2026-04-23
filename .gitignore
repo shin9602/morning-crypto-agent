@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+result.json
+morning_agent/result.json
+results/
+*.egg-info/
+.venv/
+venv/

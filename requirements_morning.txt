@@ -1,0 +1,8 @@
+anthropic>=0.40.0
+pandas>=2.1.0
+pandas-ta>=0.3.14b0
+numpy>=1.26.0
+requests>=2.31.0
+yfinance>=0.2.36
+python-dotenv>=1.0.0
+schedule>=1.2.0
