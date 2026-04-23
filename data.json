@@ -1,0 +1,75 @@
+{
+  "timestamp": "2026-04-23 15:47 UTC",
+  "coins": {
+    "ETH": {
+      "price": 2334.060059,
+      "rsi": 56.0,
+      "macd": "+",
+      "bb": "중간",
+      "prob_1d": 54.8,
+      "prob_7d": 61.3,
+      "prob_30d": 51.6,
+      "similar_n": 31,
+      "key_level": 2531.190511,
+      "level_dist": 8.45,
+      "top_combo_rate": 100.0
+    },
+    "BTC": {
+      "price": 78378.9375,
+      "rsi": 65.7,
+      "macd": "+",
+      "bb": "상단",
+      "prob_1d": 45.8,
+      "prob_7d": 37.5,
+      "prob_30d": 45.8,
+      "similar_n": 48,
+      "key_level": 67426.985889,
+      "level_dist": 13.97,
+      "top_combo_rate": 100.0
+    },
+    "DOGE": {
+      "price": 0.09744,
+      "rsi": 56.2,
+      "macd": "+",
+      "bb": "상단",
+      "prob_1d": 35.7,
+      "prob_7d": 50.0,
+      "prob_30d": 42.9,
+      "similar_n": 14,
+      "key_level": 0.095931,
+      "level_dist": 1.55,
+      "top_combo_rate": 71.4
+    },
+    "SOL": {
+      "price": 86.290001,
+      "rsi": 51.9,
+      "macd": "+",
+      "bb": "중간",
+      "prob_1d": 48.6,
+      "prob_7d": 48.6,
+      "prob_30d": 62.9,
+      "similar_n": 35,
+      "key_level": 84.674874,
+      "level_dist": 1.87,
+      "top_combo_rate": 85.7
+    },
+    "XRP": {
+      "price": 1.4315,
+      "rsi": 56.0,
+      "macd": "+",
+      "bb": "중간",
+      "prob_1d": 45.7,
+      "prob_7d": 34.3,
+      "prob_30d": 14.3,
+      "similar_n": 35,
+      "key_level": 1.436758,
+      "level_dist": 0.37,
+      "top_combo_rate": 75.0
+    }
+  },
+  "macro": {
+    "fg": 46,
+    "dxy": "unknown",
+    "nasdaq": "unknown"
+  }
+}
