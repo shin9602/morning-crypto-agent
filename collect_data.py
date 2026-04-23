@@ -11,6 +11,8 @@ from pathlib import Path
 import requests
 import numpy as np
 import pandas as pd
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 try:
     import pandas_ta as ta
@@ -25,6 +27,7 @@ except ImportError:
 BINANCE_URL = "https://api.binance.com"
 FNG_URL     = "https://api.alternative.me/fng/"
 TIMEOUT     = 15
+RETRY_STATUSES = (429, 500, 502, 503, 504)
 
 COINS = [
     ("ETHUSDT",  "ETH"),
@@ -34,27 +37,56 @@ COINS = [
     ("XRPUSDT",  "XRP"),
 ]
 
+session = requests.Session()
+session.mount(
+    "https://",
+    HTTPAdapter(
+        max_retries=Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=RETRY_STATUSES,
+            allowed_methods=("GET",),
+        )
+    ),
+)
+
 
 # ── 데이터 수집 ───────────────────────────────────────────────────────────────
 
 def fetch_klines(symbol: str, limit: int = 730) -> pd.DataFrame:
-    resp = requests.get(f"{BINANCE_URL}/api/v3/klines",
-                        params={"symbol": symbol, "interval": "1d", "limit": limit},
-                        timeout=TIMEOUT)
+    resp = session.get(f"{BINANCE_URL}/api/v3/klines",
+                       params={"symbol": symbol, "interval": "1d", "limit": limit},
+                       timeout=TIMEOUT)
     resp.raise_for_status()
     cols = ["t","open","high","low","close","volume","ct","qv","n","tbv","tqv","ig"]
     df = pd.DataFrame(resp.json(), columns=cols)
+    if df.empty:
+        raise RuntimeError(f"{symbol} kline response was empty")
     df.index = pd.to_datetime(df["t"], unit="ms", utc=True).dt.normalize()
     return df[["open","high","low","close","volume"]].astype(float)
 
 def fetch_fear_greed(limit: int = 730) -> pd.Series:
-    resp = requests.get(FNG_URL, params={"limit": limit}, timeout=TIMEOUT)
+    resp = session.get(FNG_URL, params={"limit": limit}, timeout=TIMEOUT)
     resp.raise_for_status()
     records = {}
     for d in resp.json().get("data", []):
         ts = pd.Timestamp(int(d["timestamp"]), unit="s", tz="UTC").normalize()
         records[ts] = int(d["value"])
     return pd.Series(records).sort_index() if records else pd.Series(dtype=int)
+
+def safe_fetch_fear_greed(limit: int = 730) -> pd.Series:
+    try:
+        return fetch_fear_greed(limit)
+    except Exception as exc:
+        print(f"[warn] fear & greed fetch failed: {exc}")
+        return pd.Series(dtype=int)
+
+def safe_fetch_macro_raw(ticker: str) -> pd.Series:
+    try:
+        return fetch_macro_raw(ticker)
+    except Exception as exc:
+        print(f"[warn] macro fetch failed for {ticker}: {exc}")
+        return pd.Series(dtype=float)
 
 def fetch_macro_raw(ticker: str) -> pd.Series:
     if yf is None: return pd.Series(dtype=float)
@@ -243,15 +275,12 @@ def main():
     ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     print(f"[{ts}] 데이터 수집 시작")
 
-    fg         = fetch_fear_greed(730)
-    dxy_raw    = fetch_macro_raw("DX-Y.NYB")
-    nasdaq_raw = fetch_macro_raw("^IXIC")
+    fg         = safe_fetch_fear_greed(730)
+    dxy_raw    = safe_fetch_macro_raw("DX-Y.NYB")
+    nasdaq_raw = safe_fetch_macro_raw("^IXIC")
     df_btc_raw = fetch_klines("BTCUSDT", 730)
 
     fg_now = int(fg.iloc[-1]) if not fg.empty else 50
-    dxy_ref = align(dxy_raw, df_btc_raw.index)
-    nasdaq_ref = align(nasdaq_raw, df_btc_raw.index)
-
     coins: dict = {}
     for symbol, label in COINS:
         print(f"  {label}...", end=" ")
@@ -262,11 +291,10 @@ def main():
         except Exception as e:
             print(f"오류: {e}")
 
-    btc_ref = df_btc_raw["close"]
     macro = {
         "fg":     fg_now,
-        "dxy":    "up" if (not dxy_raw.empty and dxy_raw.iloc[-1] > dxy_raw.iloc[-2]) else "down",
-        "nasdaq": "up" if (not nasdaq_raw.empty and nasdaq_raw.iloc[-1] > nasdaq_raw.iloc[-2]) else "down",
+        "dxy":    "up" if (len(dxy_raw) >= 2 and dxy_raw.iloc[-1] > dxy_raw.iloc[-2]) else "unknown",
+        "nasdaq": "up" if (len(nasdaq_raw) >= 2 and nasdaq_raw.iloc[-1] > nasdaq_raw.iloc[-2]) else "unknown",
     }
 
     result = {"timestamp": ts, "coins": coins, "macro": macro}
