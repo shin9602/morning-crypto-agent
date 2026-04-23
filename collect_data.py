@@ -30,11 +30,11 @@ TIMEOUT     = 15
 RETRY_STATUSES = (429, 500, 502, 503, 504)
 
 COINS = [
-    ("ETHUSDT",  "ETH"),
-    ("BTCUSDT",  "BTC"),
-    ("DOGEUSDT", "DOGE"),
-    ("SOLUSDT",  "SOL"),
-    ("XRPUSDT",  "XRP"),
+    ("ETHUSDT",  "ETH",  "ETH-USD"),
+    ("BTCUSDT",  "BTC",  "BTC-USD"),
+    ("DOGEUSDT", "DOGE", "DOGE-USD"),
+    ("SOLUSDT",  "SOL",  "SOL-USD"),
+    ("XRPUSDT",  "XRP",  "XRP-USD"),
 ]
 
 session = requests.Session()
@@ -53,7 +53,18 @@ session.mount(
 
 # ── 데이터 수집 ───────────────────────────────────────────────────────────────
 
-def fetch_klines(symbol: str, limit: int = 730) -> pd.DataFrame:
+def _normalize_ohlcv_index(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    if getattr(df.index, "tz", None) is None:
+        df.index = df.index.tz_localize("UTC")
+    else:
+        df.index = df.index.tz_convert("UTC")
+    df.index = df.index.normalize()
+    return df
+
+
+def fetch_binance_klines(symbol: str, limit: int = 730) -> pd.DataFrame:
     resp = session.get(f"{BINANCE_URL}/api/v3/klines",
                        params={"symbol": symbol, "interval": "1d", "limit": limit},
                        timeout=TIMEOUT)
@@ -64,6 +75,28 @@ def fetch_klines(symbol: str, limit: int = 730) -> pd.DataFrame:
         raise RuntimeError(f"{symbol} kline response was empty")
     df.index = pd.to_datetime(df["t"], unit="ms", utc=True).dt.normalize()
     return df[["open","high","low","close","volume"]].astype(float)
+
+
+def fetch_yfinance_klines(ticker: str, limit: int = 730) -> pd.DataFrame:
+    if yf is None:
+        raise RuntimeError("yfinance is not available")
+    hist = yf.Ticker(ticker).history(period="3y", interval="1d", auto_adjust=False)
+    if hist.empty:
+        raise RuntimeError(f"{ticker} history response was empty")
+    df = hist.rename(columns=str.lower)
+    df = _normalize_ohlcv_index(df)
+    return df[["open","high","low","close","volume"]].astype(float).tail(limit)
+
+
+def fetch_klines(symbol: str, yf_ticker: str, limit: int = 730) -> pd.DataFrame:
+    try:
+        return fetch_binance_klines(symbol, limit)
+    except requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "?"
+        print(f"[warn] Binance fetch failed for {symbol} with HTTP {status}; falling back to {yf_ticker}")
+    except requests.RequestException as exc:
+        print(f"[warn] Binance fetch failed for {symbol}: {exc}; falling back to {yf_ticker}")
+    return fetch_yfinance_klines(yf_ticker, limit)
 
 def fetch_fear_greed(limit: int = 730) -> pd.Series:
     resp = session.get(FNG_URL, params={"limit": limit}, timeout=TIMEOUT)
@@ -79,7 +112,7 @@ def safe_fetch_fear_greed(limit: int = 730) -> pd.Series:
         return fetch_fear_greed(limit)
     except Exception as exc:
         print(f"[warn] fear & greed fetch failed: {exc}")
-        return pd.Series(dtype=int)
+        raise
 
 def safe_fetch_macro_raw(ticker: str) -> pd.Series:
     try:
@@ -238,8 +271,8 @@ def _bb_label(v):
     if v < 1.0: return "상단"
     return "위이탈"
 
-def collect_coin(symbol, df_btc_raw, fg, dxy_raw, nasdaq_raw):
-    df_raw = fetch_klines(symbol, 730)
+def collect_coin(symbol, yf_ticker, df_btc_raw, fg, dxy_raw, nasdaq_raw):
+    df_raw = fetch_klines(symbol, yf_ticker, 730)
     df     = add_indicators(df_raw)
     btcdom = btc_dom_series(df, df_btc_raw)
     dxy    = align(dxy_raw, df.index)
@@ -278,14 +311,14 @@ def main():
     fg         = safe_fetch_fear_greed(730)
     dxy_raw    = safe_fetch_macro_raw("DX-Y.NYB")
     nasdaq_raw = safe_fetch_macro_raw("^IXIC")
-    df_btc_raw = fetch_klines("BTCUSDT", 730)
+    df_btc_raw = fetch_klines("BTCUSDT", "BTC-USD", 730)
 
     fg_now = int(fg.iloc[-1]) if not fg.empty else 50
     coins: dict = {}
-    for symbol, label in COINS:
+    for symbol, label, yf_ticker in COINS:
         print(f"  {label}...", end=" ")
         try:
-            coins[label] = collect_coin(symbol, df_btc_raw, fg, dxy_raw, nasdaq_raw)
+            coins[label] = collect_coin(symbol, yf_ticker, df_btc_raw, fg, dxy_raw, nasdaq_raw)
             d = coins[label]
             print(f"가격:{d['price']} P1:{d['prob_1d']}% P7:{d['prob_7d']}% P30:{d['prob_30d']}%")
         except Exception as e:
@@ -299,7 +332,7 @@ def main():
 
     result = {"timestamp": ts, "coins": coins, "macro": macro}
     Path("data.json").write_text(json.dumps(result, indent=2, ensure_ascii=False))
-    print(f"✓ data.json 저장 완료")
+    print("data.json saved")
 
 
 if __name__ == "__main__":
