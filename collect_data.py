@@ -324,10 +324,15 @@ def main():
         except Exception as e:
             print(f"오류: {e}")
 
+    def _macro_dir(series: pd.Series) -> str:
+        if len(series) < 2:
+            return "unknown"
+        return "up" if series.iloc[-1] > series.iloc[-2] else "down"
+
     macro = {
         "fg":     fg_now,
-        "dxy":    "up" if (len(dxy_raw) >= 2 and dxy_raw.iloc[-1] > dxy_raw.iloc[-2]) else "unknown",
-        "nasdaq": "up" if (len(nasdaq_raw) >= 2 and nasdaq_raw.iloc[-1] > nasdaq_raw.iloc[-2]) else "unknown",
+        "dxy":    _macro_dir(dxy_raw),
+        "nasdaq": _macro_dir(nasdaq_raw),
     }
 
     result = {"timestamp": ts, "coins": coins, "macro": macro}
